@@ -75,10 +75,10 @@ export default function AppShell({
             onClick={toggleSidebar}
             className="h-9 w-9 rounded-2xl bg-gradient-to-br from-purple-500 to-fuchsia-500 shadow-md flex items-center justify-center text-white font-semibold"
           >
-            AM
+            Ai
           </button>
           <div className="font-semibold text-sm text-slate-900 dark:text-slate-50">
-            AI Meeting Summariser
+            Summify AI
           </div>
         </div>
         <div className="p-3 h-full">
