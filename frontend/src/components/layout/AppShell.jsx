@@ -99,10 +99,10 @@ export default function AppShell({
             className="h-9 w-9 rounded-2xl bg-gradient-to-br from-purple-500 to-fuchsia-500 shadow-md flex items-center justify-center text-white font-semibold"
             title="Open navigation"
           >
-            AM
+            AI
           </button>
           <span className="hidden sm:inline text-sm font-semibold text-slate-800 dark:text-slate-100">
-            AI Meeting Summariser
+            Summify AI
           </span>
         </div>
 
