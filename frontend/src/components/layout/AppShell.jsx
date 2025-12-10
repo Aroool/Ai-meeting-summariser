@@ -75,7 +75,7 @@ export default function AppShell({
             onClick={toggleSidebar}
             className="h-9 w-9 rounded-2xl bg-gradient-to-br from-purple-500 to-fuchsia-500 shadow-md flex items-center justify-center text-white font-semibold"
           >
-            Ai
+            AI
           </button>
           <div className="font-semibold text-sm text-slate-900 dark:text-slate-50">
             Summify AI
