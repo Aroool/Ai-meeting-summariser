@@ -13,6 +13,9 @@ import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Profile from "./components/Profile";
 
+import HomePage from "./components/pages/HomePage.js";
+
+
 import AppShell from "./components/layout/AppShell.jsx";
 import DashboardPage from "./components/pages/DashboardPage.js";
 import MeetingsPage from "./components/pages/MeetingsPage.js";
@@ -117,50 +120,60 @@ export default function App() {
 
   return (
     <Router>
-      <OAuthQueryCleanup />
-      <Routes>
-        {/* Redirect root based on auth */}
-        <Route
-          path="/"
-          element={
-            user ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
+  <OAuthQueryCleanup />
+  <Routes>
+    {/* Public marketing home page */}
+    <Route path="/" element={<HomePage />} />
 
-        {/* Public auth routes */}
-        <Route path="/login" element={<Login onLoggedIn={setUser} />} />
-        <Route path="/signup" element={<Signup onSignedUp={setUser} />} />
+    {/* Public auth routes */}
+    <Route
+      path="/login"
+      element={
+        user ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <Login onLoggedIn={setUser} />
+        )
+      }
+    />
+    <Route
+      path="/signup"
+      element={
+        user ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <Signup onSignedUp={setUser} />
+        )
+      }
+    />
 
-        {/* Protected app shell with sidebar/topbar; nested pages render via <Outlet /> */}
-        <Route
-          element={
-            <Protected user={user}>
-              <AppShell
-                user={user}
-                onLogout={() => setUser(null)}
-                theme={theme}
-                onToggleTheme={handleToggleTheme}
-              />
-            </Protected>
-          }
-        >
-          <Route path="/dashboard" element={<DashboardPage user={user} />} />
-          <Route path="/meetings" element={<MeetingsPage user={user} />} />
-          <Route path="/meetings/:id" element={<MeetingPage />} />
-          <Route path="/uploads" element={<UploadsPage />} />
-          <Route
-            path="/profile"
-            element={<Profile user={user} onLogout={() => setUser(null)} />}
+    {/* Protected app shell with sidebar/topbar; nested pages render via <Outlet /> */}
+    <Route
+      element={
+        <Protected user={user}>
+          <AppShell
+            user={user}
+            onLogout={() => setUser(null)}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
           />
-        </Route>
+        </Protected>
+      }
+    >
+      <Route path="/dashboard" element={<DashboardPage user={user} />} />
+      <Route path="/meetings" element={<MeetingsPage user={user} />} />
+      <Route path="/meetings/:id" element={<MeetingPage />} />
+      <Route path="/uploads" element={<UploadsPage />} />
+      <Route
+        path="/profile"
+        element={<Profile user={user} onLogout={() => setUser(null)} />}
+      />
+    </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+    {/* Fallback – unknown routes go to the home/landing page */}
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>
+</Router>
+
   );
 }
