@@ -1,104 +1,70 @@
-# AI-Summariser
-In most meetings, people talk about many things, but not everything gets remembered. Important points, action items, or deadlines often get lost. Right now, people either take notes manually or rewatch long recordings, which wastes time. 
+# Getting Started with Create React App
 
-# Zoom Meeting Summarizer – Team 5
-**Clark University – MSCS 3999 Capstone Project**
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-## 🚀 Project Overview
-The Zoom Meeting Summarizer is a web application that automatically ingests meeting transcripts (via Zoom or manual upload) and generates:
-- Structured summaries  
-- Action items & deadlines  
-- Google Calendar event suggestions  
-- Q&A chatbot with transcript citations  
-- Notifications when summaries are ready  
+## Available Scripts
 
-This helps teams save time, remember decisions, and stay organized.
+In the project directory, you can run:
 
----
+### `npm start`
 
-## 👥 Team Members
-- **Shivayokeshwari Athappan** – Product Owner, Backend Lead  
-- **Arulprashath Rajarajan** – Scrum Master, Frontend Lead  
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
----
+The page will reload when you make changes.\
+You may also see any lint errors in the console.
 
-## 🛠️ Tech Stack
-- **Frontend:** React + Tailwind CSS  
-- **Backend:** FastAPI (Python)  
-- **Database:** PostgreSQL + pgvector  
-- **AI Services:** OpenAI API  
-- **Integrations:** Zoom API, Google Calendar API  
-- **Deployment:** Docker + Render/Fly.io  
+### `npm test`
 
----
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
 
-## 📂 Repository Structure
-zoom-meeting-summarizer/
-│── frontend/ # React UI
-│── backend/ # FastAPI services
-│── db/ # Database migrations/schema
-│── sample_code.py # Example FastAPI endpoint
-│── README.md
+### `npm run build`
 
-yaml
-Copy code
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
 
----
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
 
-## 🔧 Setup Instructions
-### 1. Clone the repository  
-```bash
-git clone https://github.com/YOUR-USERNAME/zoom-meeting-summarizer.git
-cd zoom-meeting-summarizer
-2. Create a virtual environment and install backend dependencies
-bash
-Copy code
-python -m venv venv
-source venv/bin/activate   # Linux/Mac
-venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-3. Run backend server
-bash
-Copy code
-uvicorn backend.main:app --reload
-4. Run frontend (in a new terminal)
-bash
-Copy code
-cd frontend
-npm install
-npm run dev
-🤝 Collaboration Guidelines
-Branching model:
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
-main → production-ready code
+### `npm run eject`
 
-dev → active development
+**Note: this is a one-way operation. Once you `eject`, you can't go back!**
 
-feature/* → new features
+If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
 
-Pull requests: Each feature must be reviewed before merging.
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
 
-Commit messages: Use clear, descriptive commit messages.
+You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
 
-📅 Agile Scrum Alignment
-Managed via Trello: [Insert Trello Board Link Here]
+## Learn More
 
-2-week sprints with planning, review, and retrospective.
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
 
-Working demo at the end of each sprint.
+To learn React, check out the [React documentation](https://reactjs.org/).
 
-📜 License
-For academic use – Clark University MSCS 3999 Capstone Project.
+### Code Splitting
 
-yaml
-Copy code
+This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
 
----
+### Analyzing the Bundle Size
 
-⚡ Do you also want me to **create the initial `requirements.txt` and `package.json` placeholders** (so the repo looks more complete before coding starts)?
+This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
 
+### Making a Progressive Web App
 
+This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
 
+### Advanced Configuration
 
+This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
 
-Ask ChatGPT
+### Deployment
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+
+### `npm run build` fails to minify
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
