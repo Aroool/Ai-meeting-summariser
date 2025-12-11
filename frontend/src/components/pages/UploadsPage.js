@@ -1,6 +1,7 @@
 // src/components/pages/UploadsPage.jsx
 import { useEffect, useState } from "react";
 import { Download, Trash2, Star } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const API = process.env.REACT_APP_API_URL || "";
 const LS_KEY = "ai_summariser_user";
@@ -37,29 +38,91 @@ function formatDateTime(dt) {
   });
 }
 
+// Try to get a nice human transcript name
+function deriveTranscriptTitle(m) {
+  const meetingId = m.id;
+
+  // Prefer explicit transcript fields first
+  const candidates = [
+    m.transcript_filename,
+    m.transcript_name,
+    m.transcript_path,
+    m.transcript_file,
+  ].filter(Boolean);
+
+  if (candidates.length) {
+    const raw = String(candidates[0]);
+
+    // strip folders if present
+    const parts = raw.split(/[\\/]/);
+    let name = parts[parts.length - 1];
+
+    // strip "meeting_<id>_" prefix if your backend prefixes like that
+    if (meetingId) {
+      const prefix = `meeting_${meetingId}_`;
+      if (name.startsWith(prefix)) {
+        name = name.slice(prefix.length);
+      }
+    }
+    return name;
+  }
+
+  // 🚑 Fallbacks if for some reason we have no transcript fields at all
+  if (m.title) {
+    return m.title.endsWith("_Transcript.txt")
+      ? m.title
+      : `${m.title}_Transcript.txt`;
+  }
+
+  return "Transcript.txt";
+}
+
+
 // Build uploads list from meetings array
 function normalizeUploadsFromMeetings(meetings) {
-  const arr = Array.isArray(meetings) ? meetings : [];
   const manual = [];
   const drive = [];
 
-  for (const m of arr) {
+  for (const m of meetings || []) {
     const hasTranscript =
-      !!m.transcript_path || !!m.transcript || !!m.transcript_file;
+      !!m.transcript_filename ||
+      !!m.transcript_path ||
+      !!m.transcript_name ||
+      !!m.transcript_file;
 
     if (!hasTranscript) continue;
 
     const kind =
-      m.transcript_source === "gdrive" || m.source === "gdrive"
-        ? "gdrive"
-        : "manual";
+      m.transcript_source === "gdrive" ? "gdrive" : "manual";
+
+    // ----------------------------
+    // CLEAN TRANSCRIPT NAME
+    // ----------------------------
+    let filename =
+      m.transcript_filename ||
+      m.transcript_name ||
+      m.transcript_path ||
+      m.transcript_file ||
+      "Transcript.txt";
+
+    // Only take the actual file name, strip folders
+    filename = filename.split("/").pop().split("\\").pop();
+
+    // Remove meeting prefixes like: meeting_15_2025blah_
+    filename = filename.replace(/^meeting_\d+_[A-Za-z0-9]+_/, "");
+
+    const uploadedAt =
+      m.transcript_uploaded_at ||
+      m.updated_at ||
+      m.created_at ||
+      null;
 
     const item = {
       id: `m-${m.id}-${kind}`,
       meetingId: m.id,
       kind,
-      title: m.title || `Meeting #${m.id}`,
-      createdAt: m.created_at || m.updated_at || null,
+      title: filename,
+      createdAt: uploadedAt,
       path: m.transcript_path || m.transcript_file || "",
       raw: m,
     };
@@ -70,6 +133,8 @@ function normalizeUploadsFromMeetings(meetings) {
 
   return { manual, drive };
 }
+
+
 
 function mapDriveFilesToItems(files) {
   return (files || []).map((f) => ({
@@ -122,7 +187,16 @@ export default function UploadsPage() {
   const user = readLocalUser() || {};
   const userId = user.id || user.user_id || user.uid || 1;
 
-  const [activeTab, setActiveTab] = useState("manual"); // 'manual' | 'drive'
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const params = new URLSearchParams(location.search);
+  const openDrive = params.get("drive") === "1";
+  const attachMeetingId = params.get("attach");
+  const isAttachMode = !!attachMeetingId;
+
+  // initial tab depends on ?drive=1
+  const [activeTab, setActiveTab] = useState(openDrive ? "drive" : "manual"); // 'manual' | 'drive'
   const [manualFiles, setManualFiles] = useState([]);
   const [driveFiles, setDriveFiles] = useState(() =>
     loadDriveFromStorage(userId)
@@ -141,6 +215,20 @@ export default function UploadsPage() {
       return new Set();
     }
   });
+
+  // Attach / preview modal state
+  const [previewItem, setPreviewItem] = useState(null);
+  const [isAttachModalOpen, setIsAttachModalOpen] = useState(false);
+  const [previewText, setPreviewText] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+
+  // If the query param changes while we're on this page, sync the tab
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    const driveFlag = p.get("drive") === "1";
+    setActiveTab(driveFlag ? "drive" : "manual");
+  }, [location.search]);
 
   // Persist drive files whenever they change
   useEffect(() => {
@@ -164,7 +252,6 @@ export default function UploadsPage() {
     setErr("");
 
     try {
-      // use same endpoint as Meetings page
       const r = await fetch(`${API}/api/meetings/user/${userId}`, {
         credentials: "include",
       });
@@ -181,7 +268,6 @@ export default function UploadsPage() {
       const list = await r.json();
       const { manual, drive } = normalizeUploadsFromMeetings(list);
 
-      // Merge backend drive uploads with whatever we already cached
       const cachedDrive = loadDriveFromStorage(userId);
       const mergedDrive = mergeById(drive, cachedDrive);
 
@@ -213,24 +299,84 @@ export default function UploadsPage() {
     });
   };
 
+  // ---- DOWNLOAD: real endpoints now ----
   const handleDownload = (item) => {
+    // Manual transcripts: use meeting transcript endpoint
+    if (item.kind === "manual" && item.meetingId) {
+      const url = `${API}/api/meetings/${item.meetingId}/transcript?raw=true`;
+      window.open(url, "_blank");
+      return;
+    }
+
+    // Drive uploads: use webViewLink or any https URL
     if (item.path && /^https?:\/\//i.test(item.path)) {
       window.open(item.path, "_blank");
-    } else {
-      alert("Download endpoint not wired yet – front-end only for now.");
+      return;
     }
+
+    // Fallback for any relative file path (if you ever store them)
+    if (item.path) {
+      const path =
+        item.path.startsWith("/") ? item.path : `/${item.path}`;
+      window.open(`${API}${path}`, "_blank");
+      return;
+    }
+
+    alert("Download endpoint not wired yet – front-end only for now.");
   };
 
+  // ---- DELETE: call meeting transcript DELETE for manual items ----
   const handleDelete = async (item) => {
     const sure = window.confirm(
       `Delete transcript for “${item.title}”? This cannot be undone.`
     );
     if (!sure) return;
 
+    // Manual meeting transcripts -> real API delete
+    if (item.kind === "manual" && item.meetingId) {
+      try {
+        const res = await fetch(
+          `${API}/api/meetings/${item.meetingId}/transcript`,
+          {
+            method: "DELETE",
+            credentials: "include",
+          }
+        );
+
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          throw new Error(
+            t || `Failed to delete transcript (HTTP ${res.status})`
+          );
+        }
+
+        // Remove from UI
+        setManualFiles((list) => list.filter((f) => f.id !== item.id));
+        // Also un-star if it was starred
+        setStarred((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        return;
+      } catch (e) {
+        console.error("Delete transcript error:", e);
+        alert(
+          e?.message ||
+            "Failed to delete transcript. Please try again from the meeting page."
+        );
+        return;
+      }
+    }
+
+    // GDrive list items: still front-end only for now
     if (item.kind === "gdrive") {
       setDriveFiles((list) => list.filter((f) => f.id !== item.id));
-    } else {
-      setManualFiles((list) => list.filter((f) => f.id !== item.id));
+      setStarred((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     }
   };
 
@@ -267,13 +413,11 @@ export default function UploadsPage() {
         data.login_url;
 
       if (url && typeof url === "string") {
-        // 👇 remember we came from Uploads
         localStorage.setItem(AFTER_GOOGLE_KEY, "uploads");
-        window.location.href = url; // go to Google consent screen
+        window.location.href = url;
         return;
       }
 
-      // Fallback: still remember destination before hitting backend URL
       localStorage.setItem(AFTER_GOOGLE_KEY, "uploads");
       window.location.href = `${API}/api/google/auth-url`;
     } catch (e) {
@@ -299,13 +443,9 @@ export default function UploadsPage() {
 
       const data = await res.json();
       const files = data.files || [];
-
-      // 🔑 DIRECTLY push Drive files into the Drive tab list
       const items = mapDriveFilesToItems(files);
 
-      // Merge with any existing driveFiles (from backend or previous backfills)
       setDriveFiles((prev) => mergeById(items, prev));
-      // fetchUploads is optional now; driveFiles are persisted via localStorage
     } catch (e) {
       console.error("Backfill transcripts error:", e);
       setErr(e?.message || "Failed to backfill transcripts from Google Drive.");
@@ -314,6 +454,118 @@ export default function UploadsPage() {
     }
   };
 
+  // -------- attach-to-meeting flow --------
+  const openAttachModal = async (item) => {
+    if (!isAttachMode || !attachMeetingId) return;
+
+    setPreviewItem(item);
+    setPreviewText("");
+    setPreviewError("");
+    setIsAttachModalOpen(true);
+    setIsPreviewLoading(true);
+
+    try {
+      const raw = item.raw || {};
+      const fileId =
+        raw.id ||
+        raw.fileId ||
+        (item.id && item.id.startsWith("drive-")
+          ? item.id.slice("drive-".length)
+          : null);
+
+      const mimeType = raw.mimeType || null;
+
+      if (!fileId) {
+        setPreviewError("Could not determine Drive file id for this item.");
+        setIsPreviewLoading(false);
+        return;
+      }
+
+      const res = await fetch(`${API}/api/google/drive/preview_text`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(userId),
+        },
+        body: JSON.stringify({
+          file_id: fileId,
+          mime_type: mimeType,
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `Preview failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      setPreviewText(data.text || "");
+    } catch (e) {
+      console.error("Preview error:", e);
+      setPreviewError(e?.message || "Failed to load preview from Drive.");
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmAttach = async () => {
+    if (!previewItem || !attachMeetingId) return;
+
+    try {
+      const raw = previewItem.raw || {};
+      const fileId =
+        raw.id ||
+        raw.fileId ||
+        (previewItem.id && previewItem.id.startsWith("drive-")
+          ? previewItem.id.slice("drive-".length)
+          : null);
+      const mimeType = raw.mimeType || null;
+
+      if (!fileId) {
+        alert("Could not determine Drive file id for this item.");
+        return;
+      }
+
+      const res = await fetch(`${API}/api/google/drive/attach_to_meeting`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(userId),
+        },
+        body: JSON.stringify({
+          meeting_id: Number(attachMeetingId),
+          file_id: fileId,
+          mime_type: mimeType,
+          name: previewItem.title,
+        }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `Attach failed (${res.status})`);
+      }
+
+      setIsAttachModalOpen(false);
+      setPreviewItem(null);
+      setPreviewText("");
+
+      navigate(`/meetings/${attachMeetingId}`);
+    } catch (e) {
+      console.error("Attach to meeting error:", e);
+      alert(e?.message || "Failed to attach Drive file to meeting.");
+    }
+  };
+
+  const handleCloseAttachModal = () => {
+    setIsAttachModalOpen(false);
+    setPreviewItem(null);
+    setPreviewText("");
+    setPreviewError("");
+  };
+
+  // -------- render --------
   return (
     <div className="max-w-5xl mx-auto px-6 py-10">
       {/* Header */}
@@ -322,7 +574,9 @@ export default function UploadsPage() {
           Uploads
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          All transcripts you&apos;ve uploaded across meetings.
+          {isAttachMode
+            ? `Select a Google Drive transcript to attach to Meeting #${attachMeetingId}.`
+            : "All transcripts you’ve uploaded across meetings."}
         </p>
       </header>
 
@@ -443,6 +697,18 @@ export default function UploadsPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1">
+                  {isAttachMode &&
+                    activeTab === "drive" &&
+                    item.kind === "gdrive" && (
+                      <button
+                        type="button"
+                        onClick={() => openAttachModal(item)}
+                        className="px-3 py-1.5 rounded-full bg-purple-600 text-white text-xs font-medium hover:bg-purple-700"
+                      >
+                        Attach to meeting
+                      </button>
+                    )}
+
                   <button
                     type="button"
                     onClick={() => toggleStar(item.id)}
@@ -482,6 +748,76 @@ export default function UploadsPage() {
           })}
         </div>
       </div>
+
+      {/* Attach / Preview modal */}
+      {isAttachModalOpen && previewItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                  Attach transcript to Meeting #{attachMeetingId}
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {previewItem.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseAttachModal}
+                className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-300"
+                aria-label="Close attach modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/60">
+              {isPreviewLoading ? (
+                <p className="text-xs text-slate-500 dark:text-slate-300">
+                  Loading preview from Google Drive…
+                </p>
+              ) : previewError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-300">
+                  {previewError}
+                </p>
+              ) : previewText ? (
+                <pre className="text-[11px] sm:text-xs font-mono whitespace-pre-wrap text-slate-800 dark:text-slate-100">
+                  {previewText}
+                </pre>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-300">
+                  No preview text available, but you can still attach this file.
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-between items-center px-4 py-3 border-t border-slate-200 dark:border-slate-700 text-xs">
+              <span className="text-slate-500 dark:text-slate-400">
+                Attach this transcript to the meeting? You can regenerate the
+                summary afterwards.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseAttachModal}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAttach}
+                  disabled={isPreviewLoading}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:opacity-60"
+                >
+                  Attach to meeting
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

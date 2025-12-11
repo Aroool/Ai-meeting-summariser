@@ -1,0 +1,38 @@
+{
+  "meeting_id": 21,
+  "title": "Meeting",
+  "user_id": 3,
+  "platform": "Zoom",
+  "transcript_path": "/Users/arulprashath/Documents/GitHub/AI-Summariser/uploads/meeting_21_20251211T170004Z_Meeting Transcript.txt",
+  "generated_at": "2025-12-11T17:03:37.862469Z",
+  "status": "ready",
+  "summary_text": "Project Atlas – Sprint Planning, Deployment, Architecture Review & Team Sync Date: December 11, 2025 Attendees: - Arul (Developer) - Alex (Scrum Master) - Shiva (Backend Engineer) - Steve (Product Manager) - Robert…",
+  "key_points": [
+    "Sprint progress update",
+    "Backend queue fix completed",
+    "API response changes in analytics module",
+    "Deployment planning dates discussed",
+    "Client demo scheduled",
+    "Architecture concerns raised",
+    "User feedback issues reported",
+    "Bug #284 discussed",
+    "Team lunch planned",
+    "Auto follow-up emails feature mentioned"
+  ],
+  "decisions": [
+    "Code freeze on Dec 18, 2025",
+    "Dry run on Dec 17, 2025",
+    "Deployment on Dec 20, 2025",
+    "System design review on Dec 14, 2025",
+    "Client demo on Jan 5, 2026",
+    "Team lunch on Dec 22, 2025",
+    "UI testing on Dec 16, 2025",
+    "Performance review on Dec 19, 2025"
+  ],
+  "action_items": [
+    "Arul to finish sprint tasks today",
+    "Team to address three reported user feedback issues",
+    "Team to prepare for system design review"
+  ],
+  "completed_at": "2025-12-11T17:03:45.637704Z"
+}

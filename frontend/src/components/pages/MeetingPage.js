@@ -1,4 +1,4 @@
-// src/pages/MeetingPage.js
+// src/components/pages/MeetingPage.js
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Download, Trash2, FileText, X, MessageCircle } from "lucide-react";
@@ -54,6 +54,9 @@ export default function MeetingPage() {
   const [qaMessages, setQaMessages] = useState([]); // [{role:"user"|"assistant", text}]
   const [isQaLoading, setIsQaLoading] = useState(false);
   const [qaOpen, setQaOpen] = useState(false);
+
+  // NEW: upload choice modal
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // optional: auto-scroll chat to bottom
   const chatBodyRef = useRef(null);
@@ -408,6 +411,7 @@ export default function MeetingPage() {
                 ← Back
               </button>
 
+              {/* Hidden file input – same upload pipeline as before */}
               <input
                 ref={fileRef}
                 type="file"
@@ -415,8 +419,10 @@ export default function MeetingPage() {
                 onChange={handleFilePicked}
                 accept=".txt,.vtt,.srt,.docx,.pdf"
               />
+
+              {/* NEW: opens modal instead of directly opening file picker */}
               <button
-                onClick={() => fileRef.current?.click()}
+                onClick={() => setIsUploadModalOpen(true)}
                 className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
                 disabled={isUploading}
                 type="button"
@@ -516,6 +522,76 @@ export default function MeetingPage() {
         )}
       </div>
 
+      {/* Upload choice modal */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full mx-4 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-700">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                Upload Transcript
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsUploadModalOpen(false)}
+                className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-300"
+                aria-label="Close upload options"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4 text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Choose how you want to add your meeting transcript.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* From Computer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadModalOpen(false);
+                    fileRef.current?.click();
+                  }}
+                  className="flex flex-col items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-950/40 px-4 py-5 hover:border-purple-400 hover:bg-purple-50/60 dark:hover:bg-purple-950/30 transition"
+                >
+                  <div className="mb-3 h-10 w-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-lg font-semibold">
+                    TXT
+                  </div>
+                  <div className="text-sm font-medium text-slate-800 dark:text-slate-50">
+                    From Computer
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 text-center">
+                    Upload .txt, .vtt, .srt, .docx, or .pdf
+                  </div>
+                </button>
+
+                {/* From Google Drive */}
+<button
+  type="button"
+  onClick={() => {
+    setIsUploadModalOpen(false);
+    navigate(`/uploads?drive=1&attach=${id}`);
+  }}
+  className="flex flex-col items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-950/40 px-4 py-5 hover:border-purple-400 hover:bg-purple-50/60 dark:hover:bg-purple-950/30 transition"
+>
+  <div className="mb-3 h-10 w-10 rounded-full bg-gradient-to-br from-sky-400 to-indigo-400 flex items-center justify-center text-white text-lg font-semibold">
+    G
+  </div>
+  <div className="text-sm font-medium text-slate-800 dark:text-slate-50">
+    From Google Drive
+  </div>
+  <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 text-center">
+    Import automatically from your Drive
+  </div>
+</button>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating Q&A chat bubble */}
       <div className="fixed bottom-5 right-4 sm:bottom-6 sm:right-6 z-40">
         {/* Chat window */}
@@ -572,7 +648,9 @@ export default function MeetingPage() {
                         isUser ? "justify-end" : "justify-start"
                       }`}
                     >
-                      <div className={`max-w-[80%] px-3 py-2 text-[11px] ${bubbleClasses} shadow-sm`}>
+                      <div
+                        className={`max-w-[80%] px-3 py-2 text-[11px] ${bubbleClasses} shadow-sm`}
+                      >
                         {m.text}
                       </div>
                     </div>
