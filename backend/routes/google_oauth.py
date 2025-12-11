@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
 ]
 
 # ---- helpers ----
