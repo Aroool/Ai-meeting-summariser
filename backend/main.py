@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from .routes import qa_bot
-
+from .routes import events
 
 # --- load envs early ---
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -91,6 +91,8 @@ app.include_router(drive_router)      # /api/google/drive/...
 app.include_router(google_status.router)
 app.include_router(qa_bot.router)
 app.include_router(google_drive.router)
+app.include_router(events.router, prefix="/api")
+
 # Create tables (dev). In prod, use Alembic.
 Base.metadata.create_all(bind=engine)
 

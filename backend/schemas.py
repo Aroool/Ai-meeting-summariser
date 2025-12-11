@@ -67,3 +67,21 @@ class MeetingOut(MeetingCreate):
     class Config:
         orm_mode = True
 
+class EventBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    location: Optional[str] = None
+    notify_email: Optional[EmailStr] = None
+
+
+class EventCreate(EventBase):
+    pass
+
+
+class EventOut(EventBase):
+    id: int
+
+    class Config:
+        orm_mode = True

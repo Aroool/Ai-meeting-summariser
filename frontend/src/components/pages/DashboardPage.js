@@ -84,7 +84,7 @@ function extractUpcomingFromText(text) {
       const dt = new Date(y, mo - 1, d, hh, mm, 0);
       if (dt >= now) {
         out.push({
-          title: "Follow-up meeting",
+          title: "",
           start_iso: toLocalISO(dt),
           end_iso: null,
           description: `Auto-detected: ${m[0]}`,
@@ -116,7 +116,7 @@ function extractUpcomingFromText(text) {
       const dt = new Date(y, mo - 1, d, hh, mm, 0);
       if (dt >= now) {
         out.push({
-          title: "Follow-up meeting",
+          title: "",
           start_iso: toLocalISO(dt),
           end_iso: null,
           description: `Auto-detected: ${m[0]}`,
@@ -150,7 +150,7 @@ function extractUpcomingFromText(text) {
       const dt = new Date(y, mo - 1, d, hh, mm, 0);
       if (dt >= now) {
         out.push({
-          title: "Follow-up meeting",
+          title: "",
           start_iso: toLocalISO(dt),
           end_iso: null,
           description: `Auto-detected: ${m[0]}`,
@@ -172,31 +172,140 @@ function extractUpcomingFromText(text) {
   return dedup.slice(0, 12);
 }
 
-/* ----- title helper for upcoming cards ----- */
+/* ----- smarter title helper from decisions ----- */
+function titleFromDecisions(decisions = []) {
+  if (!Array.isArray(decisions) || decisions.length === 0) return null;
+
+  const cleaned = decisions
+    .map((d) => String(d || "").trim())
+    .filter(Boolean);
+
+  if (!cleaned.length) return null;
+
+  // Strip boilerplate like "Decision:", "We will", "Let's" etc.
+  const preprocess = (text) => {
+    let t = text.replace(/^decision:\s*/i, "");
+    t = t.replace(/^(we will|we'll|let's|lets|we should|need to)\s+/i, "");
+    t = t.replace(/^[-*]\s*/, ""); // bullet points
+    return t.trim();
+  };
+
+  // Prefer decisions that clearly look like meetings/calls
+  const meetingKeywords = [
+    "meeting",
+    "call",
+    "check-in",
+    "check in",
+    "review",
+    "demo",
+    "planning",
+    "standup",
+    "stand-up",
+    "retro",
+    "retrospective",
+    "workshop",
+    "session",
+  ];
+
+  for (const d of cleaned) {
+    const lower = d.toLowerCase();
+    if (meetingKeywords.some((w) => lower.includes(w))) {
+      const t = preprocess(d);
+      if (!t) continue;
+      const firstSentence = t.split(/[.!?\n]/)[0].trim();
+      const words = firstSentence.split(/\s+/).filter(Boolean);
+      const short = words.slice(0, 10).join(" ");
+      return short || firstSentence || t;
+    }
+  }
+
+  // Fallback: just use the first decision, cleaned
+  const t = preprocess(cleaned[0]);
+  if (!t) return null;
+  const firstSentence = t.split(/[.!?\n]/)[0].trim();
+  const words = firstSentence.split(/\s+/).filter(Boolean);
+  const short = words.slice(0, 10).join(" ");
+  return short || firstSentence || t;
+}
+
+/* ----- existing fallback title helper for upcoming cards ----- */
 function inferUpcomingTitle(u = {}) {
-  // If backend already sent a title, respect it.
-  if (u.title && u.title.trim()) return u.title;
-
-  const blob = `${u.description || ""} ${u.source || ""}`.toLowerCase();
-
-  if (blob.includes("team lunch")) return "Team lunch";
-  if (blob.includes("lunch")) return "Team lunch";
-
-  if (blob.includes("retrospective") || blob.includes("retro")) {
-    return "Sprint retrospective";
-  }
-  if (blob.includes("planning")) {
-    return "Planning session";
-  }
-  if (blob.includes("demo")) {
-    return "Demo";
-  }
-  if (blob.includes("review")) {
-    return "Review meeting";
+  // Prefer a non-generic raw title if present
+  const rawTitle = (u.raw_title || u.title || "").trim();
+  const genericTitles = [
+    "follow-up meeting",
+    "follow up meeting",
+    "follow-up",
+    "follow up",
+    "meeting",
+  ];
+  if (rawTitle && !genericTitles.includes(rawTitle.toLowerCase())) {
+    return rawTitle;
   }
 
-  // Fallback
-  return "Follow-up meeting";
+  const desc = (u.description || "").trim();
+  const src = (u.source || "").trim();
+  const text = `${desc} ${src}`.toLowerCase();
+
+  const patterns = [
+    { words: ["kickoff", "kick-off", "introduction"], title: "Project Kickoff" },
+    { words: ["client", "customer", "stakeholder"], title: "Client Meeting" },
+    { words: ["demo", "demonstration", "showcase"], title: "Product Demo" },
+    { words: ["retrospective", "retro"], title: "Sprint Retrospective" },
+    { words: ["planning", "sprint"], title: "Sprint Planning" },
+    { words: ["review", "feedback"], title: "Review Meeting" },
+    { words: ["design", "architecture"], title: "Design Discussion" },
+    { words: ["budget", "finance"], title: "Budget Review" },
+    { words: ["training", "workshop", "onboarding"], title: "Training Workshop" },
+    { words: ["q&a", "questions"], title: "Q&A Session" },
+    { words: ["1:1", "one-on-one", "one on one"], title: "1:1 Meeting" },
+    { words: ["support", "issue", "ticket", "bug"], title: "Support Discussion" },
+    { words: ["standup", "stand-up", "daily standup"], title: "Daily Standup" },
+    { words: ["interview", "candidate"], title: "Interview Meeting" },
+    { words: ["strategy", "roadmap"], title: "Strategy Meeting" },
+    { words: ["sales", "deal"], title: "Sales Call" },
+    { words: ["marketing", "campaign"], title: "Marketing Discussion" },
+    { words: ["lunch"], title: "Team Lunch" },
+  ];
+
+  for (const item of patterns) {
+    if (item.words.some((w) => text.includes(w))) {
+      return item.title;
+    }
+  }
+
+  // Pattern: "discuss <topic>"
+  const discussMatch = text.match(/discuss(?:ing)?\s+([a-z0-9 ]+)/i);
+  if (discussMatch) {
+    const topic = discussMatch[1].trim().replace(/[^a-z0-9 ]/gi, "");
+    if (topic.length > 0) {
+      return `Discussion: ${topic}`;
+    }
+  }
+
+  // Pattern: "<topic> meeting"
+  const meetMatch = text.match(/([a-z0-9 ]+?) meeting/i);
+  if (meetMatch) {
+    const topic = meetMatch[1].trim();
+    if (topic.length > 2) {
+      return `${topic[0].toUpperCase() + topic.slice(1)} Meeting`;
+    }
+  }
+
+  // Fallback: build a short title from description/source
+  const base = (desc || src || "").trim();
+  if (base) {
+    let sentence = base.split(/[\n\.!?]/)[0];
+    sentence = sentence.replace(/^(we|let's|lets|please|pls|kindly)\s+/i, "");
+    const words = sentence.split(/\s+/).filter(Boolean);
+    const short = words.slice(0, 6).join(" ");
+    if (short) {
+      return short.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  // Absolute last resort
+  return "Upcoming Meeting";
 }
 
 /* ------------------------------- component ------------------------------- */
@@ -244,31 +353,59 @@ export default function DashboardPage({ user }) {
       }
       const payload = await res.json();
       const s = payload?.normalized || {};
+      const decisions = Array.isArray(s.decisions) ? s.decisions : [];
+  
       let items = [];
       if (
         Array.isArray(s.schedule_suggestions) &&
         s.schedule_suggestions.length
       ) {
+        // LLM-provided schedule suggestions
         items = s.schedule_suggestions.map((it) => ({
-          title: it.title || "Follow-up meeting",
+          raw_title: it.title || "",
           start_iso: it.start_iso || "",
           end_iso: it.end_iso || null,
           description: it.description || it.raw_quote || "",
           source: it.raw_quote || "",
         }));
       } else {
-        const bundle = [s.summary_text || "", ...(s.decisions || []), ...(s.action_items || [])]
+        // Fallback: regex-based extraction from summary + decisions + action items
+        const bundle = [
+          s.summary_text || "",
+          ...(s.decisions || []),
+          ...(s.action_items || []),
+        ]
           .filter(Boolean)
           .join("\n");
         items = extractUpcomingFromText(bundle);
       }
-      setUpcoming(items);
-    } catch {
+  
+      // 🔥 NEW: map each upcoming item to a *specific* decision (by index)
+      const titled = items.map((u, idx) => {
+        const decisionForThis =
+          decisions[idx] || decisions[0] || null; // try 1:1, else reuse first, else none
+  
+        let fromDecision = null;
+        if (decisionForThis) {
+          // reuse your helper but pass only this one decision
+          fromDecision = titleFromDecisions([decisionForThis]);
+        }
+  
+        return {
+          ...u,
+          title: fromDecision || inferUpcomingTitle(u),
+        };
+      });
+  
+      setUpcoming(titled);
+    } catch (e) {
+      console.error("fetchUpcomingFromLatest error", e);
       setUpcoming([]);
     } finally {
       setLoadingUpcoming(false);
     }
   }
+  
 
   // Load meetings
   useEffect(() => {
@@ -320,7 +457,6 @@ export default function DashboardPage({ user }) {
   );
 
   return (
-    // AppShell already gives background & padding; here we just stack content
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         {/* Left column */}
@@ -397,9 +533,7 @@ export default function DashboardPage({ user }) {
                   <button
                     key={i}
                     onClick={() => {
-                      // Prefill the calendar composer
                       calRef.current?.prefill(u);
-                      // Remove this item from upcoming once it's used
                       setUpcoming((prev) =>
                         prev.filter((_, idx) => idx !== i)
                       );
@@ -408,7 +542,7 @@ export default function DashboardPage({ user }) {
                     title="Click to prefill the Event Composer"
                   >
                     <div className="font-medium text-gray-900 dark:text-slate-100">
-                      {inferUpcomingTitle(u)}
+                      {u.title || inferUpcomingTitle(u)}
                     </div>
                     <div className="text-xs text-gray-600 dark:text-slate-300 mt-1">
                       {u.start_iso

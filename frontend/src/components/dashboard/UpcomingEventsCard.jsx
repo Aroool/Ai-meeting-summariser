@@ -1,4 +1,78 @@
 // src/components/dashboard/UpcomingEventsCard.jsx
+
+// Title generator that ignores u.title and uses description/source only
+function inferUpcomingTitle(u = {}) {
+  const desc = (u.description || "").trim();
+  const src = (u.source || "").trim();
+  const text = `${desc} ${src}`.toLowerCase();
+
+  const patterns = [
+    { words: ["kickoff", "kick-off", "introduction"], title: "Project Kickoff" },
+    { words: ["client", "customer", "stakeholder"], title: "Client Meeting" },
+    { words: ["demo", "demonstration", "showcase"], title: "Product Demo" },
+    { words: ["retrospective", "retro"], title: "Sprint Retrospective" },
+    { words: ["planning", "sprint"], title: "Sprint Planning" },
+    { words: ["review", "feedback"], title: "Review Meeting" },
+    { words: ["design", "architecture"], title: "Design Discussion" },
+    { words: ["budget", "finance"], title: "Budget Review" },
+    { words: ["training", "workshop", "onboarding"], title: "Training Workshop" },
+    { words: ["q&a", "questions"], title: "Q&A Session" },
+    { words: ["1:1", "one-on-one", "one on one"], title: "1:1 Meeting" },
+    { words: ["support", "issue", "ticket", "bug"], title: "Support Discussion" },
+    { words: ["standup", "stand-up", "daily standup"], title: "Daily Standup" },
+    { words: ["interview", "candidate"], title: "Interview Meeting" },
+    { words: ["strategy", "roadmap"], title: "Strategy Meeting" },
+    { words: ["sales", "deal"], title: "Sales Call" },
+    { words: ["marketing", "campaign"], title: "Marketing Discussion" },
+    { words: ["lunch"], title: "Team Lunch" },
+  ];
+
+  for (const item of patterns) {
+    if (item.words.some((w) => text.includes(w))) {
+      return item.title;
+    }
+  }
+
+  // Pattern: "discuss <topic>"
+  const discussMatch = text.match(/discuss(?:ing)?\s+([a-z0-9 ]+)/i);
+  if (discussMatch) {
+    const topic = discussMatch[1].trim().replace(/[^a-z0-9 ]/gi, "");
+    if (topic.length > 0) {
+      return `Discussion: ${topic}`;
+    }
+  }
+
+  // Pattern: "<topic> meeting"
+  const meetMatch = text.match(/([a-z0-9 ]+?) meeting/i);
+  if (meetMatch) {
+    const topic = meetMatch[1].trim();
+    if (topic.length > 2) {
+      return `${topic[0].toUpperCase() + topic.slice(1)} Meeting`;
+    }
+  }
+
+  // Fallback: build a short title from description/source
+  const base = (desc || src || "").trim();
+  if (base) {
+    let sentence = base.split(/[\n\.!?]/)[0];
+
+    sentence = sentence.replace(
+      /^(we|let's|lets|please|pls|kindly)\s+/i,
+      ""
+    );
+
+    const words = sentence.split(/\s+/).filter(Boolean);
+    const short = words.slice(0, 6).join(" ");
+
+    if (short) {
+      return short.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  // Absolute last resort
+  return "Upcoming Meeting";
+}
+
 export default function UpcomingEventsCard({
   items,
   onRefresh,
@@ -41,12 +115,16 @@ export default function UpcomingEventsCard({
                 className="w-full text-left p-3 rounded-xl border hover:shadow-md hover:-translate-y-[1px] transition bg-white"
                 title="Load into the Quick Event Composer"
               >
-                <div className="font-medium text-slate-900">{u.title || "Follow-up meeting"}</div>
+                <div className="font-medium text-slate-900">
+                  {inferUpcomingTitle(u)}
+                </div>
                 <div className="text-sm text-slate-700">
                   {u.start_iso ? new Date(u.start_iso).toLocaleString() : "—"}
                 </div>
                 {u.description && (
-                  <div className="text-xs text-slate-500 mt-1 line-clamp-2">{u.description}</div>
+                  <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                    {u.description}
+                  </div>
                 )}
               </button>
             </li>

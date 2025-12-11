@@ -67,27 +67,73 @@ const buttonPrimary =
 
 // ---------- main component ----------
 const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
-  // Quick Event Composer state
-  const [title, setTitle] = useState("Follow-up meeting");
-  const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [description, setDescription] = useState("");
+  const [mode, setMode] = useState("offline"); // "offline" | "google"
 
-  // Calendar list
-  const [events, setEvents] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  // -------- OFFLINE CALENDAR STATE --------
+  const [offTitle, setOffTitle] = useState("Follow-up meeting");
+  const [offDate, setOffDate] = useState("");
+  const [offTime, setOffTime] = useState("");
+  const [offLocation, setOffLocation] = useState("");
+  const [offNotifyEmail, setOffNotifyEmail] = useState("");
+  const [offDescription, setOffDescription] = useState("");
+  const [offEvents, setOffEvents] = useState([]);
+  const [offStatus, setOffStatus] = useState("");
+  const [offLoading, setOffLoading] = useState(false);
+
+  // -------- GOOGLE CALENDAR STATE --------
+  const [gTitle, setGTitle] = useState("Follow-up meeting");
+  const [gDate, setGDate] = useState("");
+  const [gStartTime, setGStartTime] = useState("");
+  const [gEndTime, setGEndTime] = useState("");
+  const [gDescription, setGDescription] = useState("");
+  const [gEvents, setGEvents] = useState([]);
+  const [gBusy, setGBusy] = useState(false);
+  const [gErr, setGErr] = useState("");
   const [connected, setConnected] = useState(false);
 
-  // Expose prefill() so Dashboard can fill the composer from Upcoming Events
-  useImperativeHandle(ref, () => ({
-    prefill(u) {
-      if (!u) return;
+  const userIdHeader = userId
+    ? {
+        "X-User-Id": String(userId),
+      }
+    : {};
 
-      let dStr = date;
-      let sStr = startTime;
-      let eStr = endTime;
+  function authHeaders() {
+    return userId ? { "X-User-Id": String(userId) } : {};
+  }
+
+  // Expose prefill() so Dashboard can fill the OFFLINE composer from Upcoming Events
+ // Expose prefill() so Dashboard can fill the composer from Upcoming Events
+useImperativeHandle(ref, () => ({
+  prefill(u) {
+    if (!u) return;
+
+    // If user is currently in OFFLINE mode, prefill the offline form
+    if (mode === "offline") {
+      let dStr = offDate;
+      let tStr = offTime;
+
+      if (u.start_iso) {
+        const d = new Date(u.start_iso);
+        if (!Number.isNaN(d.getTime())) {
+          dStr = d.toISOString().slice(0, 10); // yyyy-mm-dd
+          tStr = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+        }
+      }
+
+      const extra = u.source ? `\n\nSource: ${u.source}` : "";
+      setOffTitle(u.title || "Follow-up meeting");
+      setOffDescription((u.description || "") + extra);
+      setOffDate(dStr);
+      setOffTime(tStr);
+      setOffStatus("Prefilled from summary – review and Save Event.");
+      return;
+    }
+
+    // If user is currently in GOOGLE mode, prefill the Google form
+    if (mode === "google") {
+      let dStr = gDate;
+      let sStr = gStartTime;
+      let eStr = gEndTime;
 
       if (u.start_iso) {
         const d = new Date(u.start_iso);
@@ -104,23 +150,135 @@ const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
         }
       }
 
-      setTitle(u.title || "Follow-up meeting");
-      setDescription(u.description || "");
-      setDate(dStr);
-      setStartTime(sStr);
-      setEndTime(eStr);
-    },
-  }));
+      const extra = u.source ? `\n\nSource: ${u.source}` : "";
+      setGTitle(u.title || "Follow-up meeting");
+      setGDescription((u.description || "") + extra);
+      setGDate(dStr);
+      setGStartTime(sStr);
+      setGEndTime(eStr);
+      setGErr("Prefilled from summary – review and Add to Google Calendar.");
+    }
+  },
+}));
 
-  function authHeaders() {
-    return userId ? { "X-User-Id": String(userId) } : {};
+
+  // -------- OFFLINE: load events --------
+  async function loadOfflineEvents() {
+    setOffLoading(true);
+    try {
+      const res = await fetch(`${API}/api/events?limit=20`, {
+        headers: {
+          ...userIdHeader,
+        },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        console.warn("Failed to load offline events", await res.text());
+        setOffEvents([]);
+        return;
+      }
+      const data = await res.json();
+      setOffEvents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error loading offline events", err);
+      setOffEvents([]);
+    } finally {
+      setOffLoading(false);
+    }
   }
 
-  async function fetchEvents() {
-    setBusy(true);
-    setErr("");
+  // -------- OFFLINE: create event --------
+  async function createOfflineEvent(e) {
+    e?.preventDefault?.();
+    setOffStatus("");
+
+    if (!offTitle || !offDate || !offTime) {
+      setOffStatus("Title, date and time are required.");
+      return;
+    }
+
+    const startIso = partsToISO(offDate, offTime);
+    if (!startIso) {
+      setOffStatus("Invalid date/time.");
+      return;
+    }
+
     try {
-      const res = await fetch(`${API}/api/calendar/events`, {
+      const res = await fetch(`${API}/api/events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...userIdHeader,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          title: offTitle,
+          description: offDescription || null,
+          start_time: startIso,
+          end_time: null,
+          location: offLocation || null,
+          notify_email: offNotifyEmail || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Create offline event failed:", text);
+        throw new Error(text || "Failed to create event");
+      }
+
+      const data = await res.json();
+      setOffEvents((prev) => [data, ...prev]);
+
+      setOffTitle("Follow-up meeting");
+      setOffDate("");
+      setOffTime("");
+      setOffLocation("");
+      setOffNotifyEmail("");
+      setOffDescription("");
+      setOffStatus(
+        "Event saved to offline calendar. Email will be sent if notify email is set."
+      );
+    } catch (err) {
+      console.error(err);
+      setOffStatus("Error creating event – see console / backend logs.");
+    }
+  }
+
+  // -------- OFFLINE: send email for event --------
+  async function sendOfflineEmail(ev) {
+    try {
+      const res = await fetch(`${API}/api/events/${ev.id}/send_email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...userIdHeader,
+        },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Send email failed:", text);
+        throw new Error(text || "Failed to send email");
+      }
+      alert("Email triggered from backend (check inbox/logs).");
+    } catch (err) {
+      console.error(err);
+      alert("Error sending email – see console / backend logs.");
+    }
+  }
+
+  // -------- GOOGLE: fetch events --------
+  async function fetchGoogleEvents() {
+    setGBusy(true);
+    setGErr("");
+    try {
+      const url =
+        userId != null
+          ? `${API}/api/calendar/events?uid=${encodeURIComponent(userId)}`
+          : `${API}/api/calendar/events`;
+
+      const res = await fetch(url, {
         credentials: "include",
         headers: authHeaders(),
       });
@@ -130,17 +288,17 @@ const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
 
         if ([400, 401, 403, 409].includes(res.status)) {
           const t = await res.text().catch(() => "");
-          setErr(
+          setGErr(
             t ||
               "Google Calendar not connected. Click Connect to link your account."
           );
-          setEvents([]);
+          setGEvents([]);
           return;
         }
 
         const t = await res.text().catch(() => "");
-        setErr(`Calendar error (${res.status}): ${t || "unknown error"}`);
-        setEvents([]);
+        setGErr(`Calendar error (${res.status}): ${t || "unknown error"}`);
+        setGEvents([]);
         return;
       }
 
@@ -170,46 +328,53 @@ const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
         .filter((e) => !!e.start)
         .sort((a, b) => a.start - b.start);
 
-      setEvents(norm);
+      setGEvents(norm);
     } catch (e) {
       setConnected(false);
-      setErr(`Failed to fetch calendar: ${e?.message || e}`);
-      setEvents([]);
+      setGErr(`Failed to fetch calendar: ${e?.message || e}`);
+      setGEvents([]);
     } finally {
-      setBusy(false);
+      setGBusy(false);
     }
   }
 
+  // -------- GOOGLE: connect --------
   async function connectGoogle() {
-    setErr("");
+    setGErr("");
     try {
-      const r = await fetch(`${API}/api/google/auth-url`, {
+      const url =
+        userId != null
+          ? `${API}/api/google/auth-url?uid=${encodeURIComponent(userId)}`
+          : `${API}/api/google/auth-url`;
+
+      const r = await fetch(url, {
         credentials: "include",
-        headers: { "X-User-Id": String(userId) },
+        headers: authHeaders(),
       });
       if (!r.ok) {
         const t = await r.text().catch(() => "");
-        setErr(`Failed to get auth URL: ${t || r.status}`);
+        setGErr(`Failed to get auth URL: ${t || r.status}`);
         return;
       }
-      const { url } = await r.json();
-      if (url) window.location.href = url;
-      else setErr("Missing auth URL from server.");
+      const { url: authUrl } = await r.json();
+      if (authUrl) window.location.href = authUrl;
+      else setGErr("Missing auth URL from server.");
     } catch (e) {
-      setErr(`Failed to start OAuth: ${e?.message || e}`);
+      setGErr(`Failed to start OAuth: ${e?.message || e}`);
     }
   }
 
-  async function createFromComposer() {
-    const start_iso = partsToISO(date, startTime);
-    let end_iso = partsToISO(date, endTime);
+  // -------- GOOGLE: create event --------
+  async function createGoogleEvent() {
+    const start_iso = partsToISO(gDate, gStartTime);
+    let end_iso = partsToISO(gDate, gEndTime);
 
     if (!start_iso) {
-      setErr("Please set a valid date and start time.");
+      setGErr("Please set a valid date and start time.");
       return;
     }
     if (!end_iso) {
-      setErr("Please set a valid end time.");
+      setGErr("Please set a valid end time.");
       return;
     }
 
@@ -221,17 +386,22 @@ const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
       end_iso = e.toISOString();
     }
 
-    setBusy(true);
-    setErr("");
+    setGBusy(true);
+    setGErr("");
     try {
       const body = {
-        title: (title || "Follow-up meeting").trim(),
-        description: description || "",
+        title: (gTitle || "Follow-up meeting").trim(),
+        description: gDescription || "",
         start_iso,
         end_iso,
       };
 
-      const r = await fetch(`${API}/api/calendar/create`, {
+      const url =
+        userId != null
+          ? `${API}/api/calendar/create?uid=${encodeURIComponent(userId)}`
+          : `${API}/api/calendar/create`;
+
+      const r = await fetch(url, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -240,182 +410,396 @@ const CalendarPanel = forwardRef(function CalendarPanel({ userId }, ref) {
 
       if (!r.ok) {
         const t = await r.text().catch(() => "");
-        setErr(`Create event failed (${r.status}): ${t}`);
+        setGErr(`Create event failed (${r.status}): ${t}`);
         return;
       }
 
-      await fetchEvents();
+      await fetchGoogleEvents();
     } catch (e) {
-      setErr(`Create event error: ${e?.message || e}`);
+      setGErr(`Create event error: ${e?.message || e}`);
     } finally {
-      setBusy(false);
+      setGBusy(false);
     }
   }
 
+  // -------- auto-load when userId/mode changes --------
   useEffect(() => {
-    fetchEvents();
+    if (userId == null) return;
+    if (mode === "offline") {
+      loadOfflineEvents();
+    } else {
+      fetchGoogleEvents();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, mode]);
 
   return (
-    <div className="p-4 rounded-2xl border border-slate-200/70 bg-white/95 shadow-[0_10px_35px_rgba(15,23,42,0.35)] dark:bg-slate-900/95 dark:border-slate-700/80">
-      {/* Quick Event Composer */}
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-slate-900 dark:text-slate-50">
-          Quick Event Composer
-        </h3>
-        <span
-          className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-            connected
-              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/40"
-              : "bg-slate-700/40 text-slate-200 border border-slate-500/60"
-          }`}
-        >
-          {connected ? "Connected" : "Not connected"}
-        </span>
-      </div>
-
-      <div className="space-y-3 mb-4">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-            Title
-          </label>
-          <input
-            className={inputBase}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Follow-up meeting"
-          />
-        </div>
-
-        {/* date + time fields */}
-        <div className="space-y-2">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-              Date
-            </label>
-            <input
-              type="date"
-              className={inputBase}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                Start time
-              </label>
-              <input
-                type="time"
-                className={inputBase}
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                End time
-              </label>
-              <input
-                type="time"
-                className={inputBase}
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-            Description
-          </label>
-          <textarea
-            className={inputBase + " resize-none"}
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Context or agenda…"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={connectGoogle}
-            className={buttonGhost + " flex-1"}
-          >
-            Connect Google Calendar
-          </button>
-          <button
-            type="button"
-            onClick={createFromComposer}
-            disabled={busy || !date || !startTime || !endTime}
-            className={buttonPrimary + " flex-1"}
-          >
-            Add to Google Calendar
-          </button>
-        </div>
-
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          Tip: End time is assumed to be on the same day. If it&rsquo;s earlier
-          than the start time, we&rsquo;ll roll it to the next day
-          automatically.
-        </p>
-      </div>
-
-      <div className="border-t border-slate-200/70 dark:border-slate-700/80 pt-3 mt-2">
-        {/* Calendar list */}
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-semibold text-slate-900 dark:text-slate-50">
+    <div className="p-4 rounded-2xl border border-slate-200/70 bg-white/95 shadow-[0_10px_35px_rgba(15,23,42,0.35)] dark:bg-slate-900/95 dark:border-slate-700/80 space-y-4">
+      {/* Header + mode switch */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-slate-900 dark:text-slate-50 text-sm">
             Calendar
-          </h4>
-          <button
-            type="button"
-            onClick={fetchEvents}
-            disabled={busy}
-            className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs text-slate-700 bg-white/5 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-800/80 transition"
-          >
-            {busy ? "Refreshing…" : "Refresh Events"}
-          </button>
+          </h3>
+          <div className="inline-flex border border-slate-300 dark:border-slate-600 rounded-md overflow-hidden text-[11px]">
+            <button
+              type="button"
+              onClick={() => setMode("offline")}
+              className={`px-2 py-1 ${
+                mode === "offline"
+                  ? "bg-purple-600 text-white"
+                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
+              }`}
+            >
+              Offline
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("google")}
+              className={`px-2 py-1 ${
+                mode === "google"
+                  ? "bg-purple-600 text-white"
+                  : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
+              }`}
+            >
+              Google
+            </button>
+          </div>
         </div>
 
-        {err && (
-          <p className="mb-2 text-xs text-red-500 dark:text-red-400">{err}</p>
-        )}
-
-        {events.length === 0 ? (
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            {connected
-              ? "No upcoming events."
-              : "No events (connect your calendar above)."}
-          </p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {events.slice(0, 6).map((e) => (
-              <li
-                key={e.id}
-                className="border border-slate-200/70 dark:border-slate-700/80 rounded-xl px-3 py-2 bg-slate-50/80 dark:bg-slate-800/80"
-              >
-                <div className="font-medium text-slate-900 dark:text-slate-50 truncate">
-                  {e.title}
-                </div>
-                <div className="text-xs text-slate-700 dark:text-slate-300 mt-0.5">
-                  {formatEventRange(e.start, e.end)}
-                </div>
-                {e.location && (
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    {e.location}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <button
+          type="button"
+          onClick={mode === "offline" ? loadOfflineEvents : fetchGoogleEvents}
+          disabled={mode === "offline" ? offLoading : gBusy}
+          className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs text-slate-700 bg-white/5 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-800/80 transition"
+        >
+          {mode === "offline"
+            ? offLoading
+              ? "Refreshing…"
+              : "Refresh Events"
+            : gBusy
+            ? "Refreshing…"
+            : "Refresh Events"}
+        </button>
       </div>
+
+      {/* OFFLINE MODE */}
+      {mode === "offline" && (
+        <>
+          {/* Offline composer */}
+          <form
+            onSubmit={createOfflineEvent}
+            className="space-y-3 mb-3 text-xs"
+          >
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Title *
+              </label>
+              <input
+                className={inputBase}
+                value={offTitle}
+                onChange={(e) => setOffTitle(e.target.value)}
+                placeholder="Follow-up meeting"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Date *
+                </label>
+                <input
+                  type="date"
+                  className={inputBase}
+                  value={offDate}
+                  onChange={(e) => setOffDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Time *
+                </label>
+                <input
+                  type="time"
+                  className={inputBase}
+                  value={offTime}
+                  onChange={(e) => setOffTime(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Email to notify (optional)
+                </label>
+                <input
+                  type="email"
+                  className={inputBase}
+                  value={offNotifyEmail}
+                  onChange={(e) => setOffNotifyEmail(e.target.value)}
+                  placeholder="you@example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Location
+                </label>
+                <input
+                  className={inputBase}
+                  value={offLocation}
+                  onChange={(e) => setOffLocation(e.target.value)}
+                  placeholder="Online / Room 201"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Description
+              </label>
+              <textarea
+                className={inputBase + " resize-none"}
+                rows={2}
+                value={offDescription}
+                onChange={(e) => setOffDescription(e.target.value)}
+                placeholder="Agenda, notes, context…"
+              />
+            </div>
+
+            {offStatus && (
+              <p className="text-[11px] text-purple-600 dark:text-purple-400">
+                {offStatus}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className={buttonPrimary + " w-full"}
+              disabled={offLoading}
+            >
+              Save Event (Offline)
+            </button>
+          </form>
+
+          {/* Offline event list */}
+          <div className="border-t border-slate-200/70 dark:border-slate-700/80 pt-3 mt-2">
+            <h4 className="font-semibold text-slate-900 dark:text-slate-50 text-xs mb-2">
+              Upcoming Offline Events
+            </h4>
+            {offLoading && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Loading…
+              </p>
+            )}
+            {!offLoading && offEvents.length === 0 && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                No events yet – create one above.
+              </p>
+            )}
+            {!offLoading && offEvents.length > 0 && (
+              <ul className="space-y-2 text-xs max-h-64 overflow-y-auto pr-1">
+                {offEvents.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="border border-slate-200/70 dark:border-slate-700/80 rounded-xl px-3 py-2 bg-slate-50/80 dark:bg-slate-800/80"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="font-medium text-slate-900 dark:text-slate-50 truncate">
+                        {ev.title}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {ev.start_time
+                          ? new Date(ev.start_time).toLocaleString()
+                          : "—"}
+                      </div>
+                    </div>
+                    {ev.location && (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        📍 {ev.location}
+                      </div>
+                    )}
+                    {ev.description && (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {ev.description.length > 80
+                          ? ev.description.slice(0, 80) + "…"
+                          : ev.description}
+                      </div>
+                    )}
+                    <div className="mt-1 flex justify-between items-center">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {ev.notify_email ? `Notify: ${ev.notify_email}` : ""}
+                      </span>
+                      {ev.notify_email && (
+                        <button
+                          type="button"
+                          onClick={() => sendOfflineEmail(ev)}
+                          className="text-[10px] px-2 py-1 rounded bg-purple-600 text-white hover:bg-purple-700"
+                        >
+                          Send Email
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* GOOGLE MODE */}
+      {mode === "google" && (
+        <>
+          {/* Quick Event Composer for Google */}
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-slate-900 dark:text-slate-50 text-sm">
+                Quick Event Composer (Google)
+              </h3>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                  connected
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/40"
+                    : "bg-slate-700/40 text-slate-200 border border-slate-500/60"
+                }`}
+              >
+                {connected ? "Connected" : "Not connected"}
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Title
+              </label>
+              <input
+                className={inputBase}
+                value={gTitle}
+                onChange={(e) => setGTitle(e.target.value)}
+                placeholder="Follow-up meeting"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Date
+              </label>
+              <input
+                type="date"
+                className={inputBase}
+                value={gDate}
+                onChange={(e) => setGDate(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Start time
+                </label>
+                <input
+                  type="time"
+                  className={inputBase}
+                  value={gStartTime}
+                  onChange={(e) => setGStartTime(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  End time
+                </label>
+                <input
+                  type="time"
+                  className={inputBase}
+                  value={gEndTime}
+                  onChange={(e) => setGEndTime(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Description
+              </label>
+              <textarea
+                className={inputBase + " resize-none"}
+                rows={2}
+                value={gDescription}
+                onChange={(e) => setGDescription(e.target.value)}
+                placeholder="Context or agenda…"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={connectGoogle}
+                className={buttonGhost + " flex-1"}
+              >
+                Connect Google Calendar
+              </button>
+              <button
+                type="button"
+                onClick={createGoogleEvent}
+                disabled={gBusy || !gDate || !gStartTime || !gEndTime}
+                className={buttonPrimary + " flex-1"}
+              >
+                Add to Google Calendar
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Tip: End time is assumed to be on the same day. If it&apos;s
+              earlier than the start time, we&apos;ll roll it to the next day
+              automatically.
+            </p>
+          </div>
+
+          {/* Google events list */}
+          <div className="border-t border-slate-200/70 dark:border-slate-700/80 pt-3 mt-2">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold text-slate-900 dark:text-slate-50 text-xs">
+                Google Calendar
+              </h4>
+            </div>
+
+            {gErr && (
+              <p className="mb-2 text-xs text-red-500 dark:text-red-400">
+                {gErr}
+              </p>
+            )}
+
+            {gEvents.length === 0 ? (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {connected
+                  ? "No upcoming events."
+                  : "No events (connect your calendar above)."}
+              </p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {gEvents.slice(0, 6).map((e) => (
+                  <li
+                    key={e.id}
+                    className="border border-slate-200/70 dark:border-slate-700/80 rounded-xl px-3 py-2 bg-slate-50/80 dark:bg-slate-800/80"
+                  >
+                    <div className="font-medium text-slate-900 dark:text-slate-50 truncate">
+                      {e.title}
+                    </div>
+                    <div className="text-xs text-slate-700 dark:text-slate-300 mt-0.5">
+                      {formatEventRange(e.start, e.end)}
+                    </div>
+                    {e.location && (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {e.location}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 });

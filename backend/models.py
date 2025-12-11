@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func  
 from datetime import datetime
 from .db import Base
 
@@ -120,3 +121,21 @@ class Summary(Base):
     # Relationships
     transcript = relationship("Transcript", back_populates="summaries")
     meeting    = relationship("Meeting", back_populates="summaries")
+
+# models.py
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # coming from X-User-Id header (simple numeric user id)
+    user_id = Column(Integer, index=True, nullable=True)
+
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=True)
+    location = Column(String(255), nullable=True)
+    notify_email = Column(String(255), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
