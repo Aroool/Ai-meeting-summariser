@@ -508,3 +508,95 @@ html.dark .upload-row-badge {
   background: rgba(22, 163, 74, 0.12);
   color: #bbf7d0;
 }
+
+/* src/styles/calendar.css */
+
+/* Make the calendar typography smaller & match your app */
+.rbc-calendar {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Inter", sans-serif;
+  font-size: 11px;
+  background-color: transparent;
+}
+
+/* Header row (Mon, Tue, ...) */
+.rbc-header {
+  padding: 2px 4px;
+  font-weight: 500;
+  font-size: 10px;
+  color: #64748b; /* slate-500 */
+  border-bottom: 1px solid rgba(148, 163, 184, 0.5); /* slate-400/50 */
+}
+
+/* Month/week grid lines */
+.rbc-month-view,
+.rbc-time-view {
+  border-radius: 0.75rem;
+  border-color: rgba(148, 163, 184, 0.4); /* slate-400/40 */
+  overflow: hidden;
+}
+
+/* Individual day cells */
+.rbc-day-bg {
+  background-color: rgba(248, 250, 252, 0.9); /* slate-50 */
+}
+
+.rbc-off-range-bg {
+  background-color: rgba(241, 245, 249, 0.85); /* slate-100 */
+}
+
+/* Today highlight */
+.rbc-today {
+  background-color: rgba(224, 231, 255, 0.7); /* indigo-100/70 */
+}
+
+/* Day numbers */
+.rbc-date-cell {
+  padding: 2px 4px;
+  text-align: right;
+  font-size: 10px;
+  color: #0f172a; /* slate-900 */
+}
+
+/* Selected slot hover */
+.rbc-slot-selection {
+  background-color: rgba(129, 140, 248, 0.25); /* indigo-400/25 */
+  border-radius: 9999px;
+}
+
+/* Event item (we also style via eventPropGetter) */
+.rbc-event {
+  box-shadow: none !important;
+}
+
+/* Month row / week row spacing */
+.rbc-row-segment {
+  padding: 1px 2px;
+}
+
+/* Dark mode tweaks (your wrapper already sets bg; these just adjust text/lines) */
+.dark .rbc-header {
+  color: #cbd5f5; /* lighter slate */
+  border-bottom-color: rgba(51, 65, 85, 0.9); /* slate-700/90 */
+}
+
+.dark .rbc-month-view,
+.dark .rbc-time-view {
+  border-color: rgba(51, 65, 85, 0.9);
+}
+
+.dark .rbc-day-bg {
+  background-color: rgba(15, 23, 42, 0.9); /* slate-900 */
+}
+
+.dark .rbc-off-range-bg {
+  background-color: rgba(15, 23, 42, 0.8);
+}
+
+.dark .rbc-date-cell {
+  color: #e2e8f0; /* slate-200 */
+}
+
+.dark .rbc-today {
+  background-color: rgba(79, 70, 229, 0.28); /* indigo-600/28 */
+}

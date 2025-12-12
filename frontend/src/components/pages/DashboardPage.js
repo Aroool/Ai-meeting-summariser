@@ -7,7 +7,7 @@ const API = process.env.REACT_APP_API_URL || "";
 const AFTER_GOOGLE_KEY = "after_google_auth_destination";
 const NOTES_KEY_PREFIX = "dashboard_notes_";
 
-/* ------------ date extraction helpers ------------ */
+/* ------------ date helpers ------------ */
 const MONTHS = {
   jan: 1,
   january: 1,
@@ -34,12 +34,15 @@ const MONTHS = {
   dec: 12,
   december: 12,
 };
+
 const p2 = (n) => String(n).padStart(2, "0");
+
 const toLocalISO = (d) =>
   `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(
     d.getHours()
   )}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
 
+/* ------------ time parsing ------------ */
 function parseTimeBits(str) {
   if (!str) return null;
   const m = str.trim().match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
@@ -49,39 +52,41 @@ function parseTimeBits(str) {
   const ap = (m[3] || "").toLowerCase();
   if (ap === "pm" && h < 12) h += 12;
   if (ap === "am" && h === 12) h = 0;
-  if (!ap && h <= 7) h += 12;
+  if (!ap && h <= 7) h += 12; // assume small hours without am/pm are PM
   return { h24: h, m: mm };
 }
 
+/* ------------ extract upcoming ------------ */
 function extractUpcomingFromText(text) {
   if (!text || typeof text !== "string") return [];
 
   const now = new Date();
-
-  // 1) Try to anchor year from transcript header like: "Date: November 9, 2025"
   let anchorYear = null;
+
+  // Try to anchor year from header like: "Date: November 9, 2025"
   {
     const head = text.slice(0, 600);
     const y1 = head.match(
       /\bDate:\s*(?:[A-Za-z]{3,9}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*)?(\d{4}))\b/i
     );
     const y2 = head.match(/\b(20\d{2})\b/);
-    if (y1 && y1[1]) anchorYear = parseInt(y1[1], 10);
-    else if (y2 && y2[1]) anchorYear = parseInt(y2[1], 10);
+    if (y1?.[1]) anchorYear = parseInt(y1[1], 10);
+    else if (y2?.[1]) anchorYear = parseInt(y2[1], 10);
   }
 
   const out = [];
 
-  // 2) ISO-like: 2025-11-12 or 2025-11-12 10:00
+  // ISO-like: 2025-11-12 or 2025-11-12 10:00
   {
     const re = /\b(20\d{2})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?\b/g;
     for (const m of text.matchAll(re)) {
-      const y = parseInt(m[1], 10);
-      const mo = parseInt(m[2], 10);
-      const d = parseInt(m[3], 10);
-      const hh = m[4] ? parseInt(m[4], 10) : 10;
-      const mm = m[5] ? parseInt(m[5], 10) : 0;
-      const dt = new Date(y, mo - 1, d, hh, mm, 0);
+      const dt = new Date(
+        +m[1],
+        +m[2] - 1,
+        +m[3],
+        m[4] ? +m[4] : 10,
+        m[5] ? +m[5] : 0
+      );
       if (dt >= now) {
         out.push({
           title: "",
@@ -94,26 +99,17 @@ function extractUpcomingFromText(text) {
     }
   }
 
-  // 3) mm/dd(/yyyy) [time]
+  // mm/dd(/yyyy) [time]
   {
     const re =
       /\b(\d{1,2})\/(\d{1,2})(?:\/(20\d{2}|\d{2}))?(?:\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?\b/gi;
     for (const m of text.matchAll(re)) {
-      const mo = parseInt(m[1], 10);
-      const d = parseInt(m[2], 10);
-      let y = null;
-      if (m[3]) {
-        y = parseInt(m[3], 10);
-        if (y < 100) y += 2000;
-      } else if (anchorYear) {
-        y = anchorYear;
-      } else {
-        y = new Date().getFullYear();
-      }
+      const mo = +m[1];
+      const d = +m[2];
+      let y = m[3] ? +m[3] : anchorYear || new Date().getFullYear();
+      if (y < 100) y += 2000;
       const tb = parseTimeBits(m[4] || "");
-      const hh = tb?.h24 ?? 10;
-      const mm = tb?.m ?? 0;
-      const dt = new Date(y, mo - 1, d, hh, mm, 0);
+      const dt = new Date(y, mo - 1, d, tb?.h24 ?? 10, tb?.m ?? 0);
       if (dt >= now) {
         out.push({
           title: "",
@@ -126,7 +122,7 @@ function extractUpcomingFromText(text) {
     }
   }
 
-  // 4) Month-name forms
+  // Month-name forms
   {
     const monthMap = MONTHS;
     const re =
@@ -134,20 +130,10 @@ function extractUpcomingFromText(text) {
 
     for (const m of text.matchAll(re)) {
       const mo = monthMap[m[1].toLowerCase().replace(/\./g, "")];
-      const d = parseInt(m[2], 10);
-      let y = null;
-      if (m[3]) {
-        y = parseInt(m[3], 10);
-      } else if (anchorYear) {
-        y = anchorYear;
-      } else {
-        y = new Date().getFullYear();
-      }
+      const d = +m[2];
+      const y = m[3] ? +m[3] : anchorYear || new Date().getFullYear();
       const tb = parseTimeBits(m[4] || "");
-      const hh = tb?.h24 ?? 10;
-      const mm = tb?.m ?? 0;
-
-      const dt = new Date(y, mo - 1, d, hh, mm, 0);
+      const dt = new Date(y, mo - 1, d, tb?.h24 ?? 10, tb?.m ?? 0);
       if (dt >= now) {
         out.push({
           title: "",
@@ -160,166 +146,94 @@ function extractUpcomingFromText(text) {
     }
   }
 
-  // Dedup + sort + cap
+  // Dedup + sort
   const seen = new Set();
   const dedup = [];
   for (const it of out) {
-    if (seen.has(it.start_iso)) continue;
-    seen.add(it.start_iso);
-    dedup.push(it);
+    if (!seen.has(it.start_iso)) {
+      seen.add(it.start_iso);
+      dedup.push(it);
+    }
   }
   dedup.sort((a, b) => new Date(a.start_iso) - new Date(b.start_iso));
-  return dedup.slice(0, 12);
+  return dedup;
 }
 
-/* ----- smarter title helper from decisions ----- */
+/* ------------ title helpers ------------ */
 function titleFromDecisions(decisions = []) {
-  if (!Array.isArray(decisions) || decisions.length === 0) return null;
+  if (!Array.isArray(decisions) || !decisions.length) return null;
 
   const cleaned = decisions
     .map((d) => String(d || "").trim())
     .filter(Boolean);
-
   if (!cleaned.length) return null;
 
-  // Strip boilerplate like "Decision:", "We will", "Let's" etc.
-  const preprocess = (text) => {
-    let t = text.replace(/^decision:\s*/i, "");
-    t = t.replace(/^(we will|we'll|let's|lets|we should|need to)\s+/i, "");
-    t = t.replace(/^[-*]\s*/, ""); // bullet points
-    return t.trim();
-  };
-
-  // Prefer decisions that clearly look like meetings/calls
-  const meetingKeywords = [
-    "meeting",
-    "call",
-    "check-in",
-    "check in",
-    "review",
-    "demo",
-    "planning",
-    "standup",
-    "stand-up",
-    "retro",
-    "retrospective",
-    "workshop",
-    "session",
-  ];
+  const preprocess = (text) =>
+    text
+      .replace(/^decision:\s*/i, "")
+      .replace(/^(we will|we'll|let's|lets|we should|need to)\s+/i, "")
+      .replace(/^[-*]\s*/, "")
+      .trim();
 
   for (const d of cleaned) {
     const lower = d.toLowerCase();
-    if (meetingKeywords.some((w) => lower.includes(w))) {
+    if (lower.includes("meeting") || lower.includes("call")) {
       const t = preprocess(d);
-      if (!t) continue;
-      const firstSentence = t.split(/[.!?\n]/)[0].trim();
-      const words = firstSentence.split(/\s+/).filter(Boolean);
-      const short = words.slice(0, 10).join(" ");
-      return short || firstSentence || t;
+      return t.split(/[.!?\n]/)[0].trim();
     }
   }
 
-  // Fallback: just use the first decision, cleaned
-  const t = preprocess(cleaned[0]);
-  if (!t) return null;
-  const firstSentence = t.split(/[.!?\n]/)[0].trim();
-  const words = firstSentence.split(/\s+/).filter(Boolean);
-  const short = words.slice(0, 10).join(" ");
-  return short || firstSentence || t;
+  return preprocess(cleaned[0]);
 }
 
-/* ----- existing fallback title helper for upcoming cards ----- */
 function inferUpcomingTitle(u = {}) {
-  // Prefer a non-generic raw title if present
-  const rawTitle = (u.raw_title || u.title || "").trim();
-  const genericTitles = [
-    "follow-up meeting",
-    "follow up meeting",
-    "follow-up",
-    "follow up",
-    "meeting",
-  ];
-  if (rawTitle && !genericTitles.includes(rawTitle.toLowerCase())) {
-    return rawTitle;
-  }
-
-  const desc = (u.description || "").trim();
-  const src = (u.source || "").trim();
-  const text = `${desc} ${src}`.toLowerCase();
-
-  const patterns = [
-    { words: ["kickoff", "kick-off", "introduction"], title: "Project Kickoff" },
-    { words: ["client", "customer", "stakeholder"], title: "Client Meeting" },
-    { words: ["demo", "demonstration", "showcase"], title: "Product Demo" },
-    { words: ["retrospective", "retro"], title: "Sprint Retrospective" },
-    { words: ["planning", "sprint"], title: "Sprint Planning" },
-    { words: ["review", "feedback"], title: "Review Meeting" },
-    { words: ["design", "architecture"], title: "Design Discussion" },
-    { words: ["budget", "finance"], title: "Budget Review" },
-    { words: ["training", "workshop", "onboarding"], title: "Training Workshop" },
-    { words: ["q&a", "questions"], title: "Q&A Session" },
-    { words: ["1:1", "one-on-one", "one on one"], title: "1:1 Meeting" },
-    { words: ["support", "issue", "ticket", "bug"], title: "Support Discussion" },
-    { words: ["standup", "stand-up", "daily standup"], title: "Daily Standup" },
-    { words: ["interview", "candidate"], title: "Interview Meeting" },
-    { words: ["strategy", "roadmap"], title: "Strategy Meeting" },
-    { words: ["sales", "deal"], title: "Sales Call" },
-    { words: ["marketing", "campaign"], title: "Marketing Discussion" },
-    { words: ["lunch"], title: "Team Lunch" },
-  ];
-
-  for (const item of patterns) {
-    if (item.words.some((w) => text.includes(w))) {
-      return item.title;
-    }
-  }
-
-  // Pattern: "discuss <topic>"
-  const discussMatch = text.match(/discuss(?:ing)?\s+([a-z0-9 ]+)/i);
-  if (discussMatch) {
-    const topic = discussMatch[1].trim().replace(/[^a-z0-9 ]/gi, "");
-    if (topic.length > 0) {
-      return `Discussion: ${topic}`;
-    }
-  }
-
-  // Pattern: "<topic> meeting"
-  const meetMatch = text.match(/([a-z0-9 ]+?) meeting/i);
-  if (meetMatch) {
-    const topic = meetMatch[1].trim();
-    if (topic.length > 2) {
-      return `${topic[0].toUpperCase() + topic.slice(1)} Meeting`;
-    }
-  }
-
-  // Fallback: build a short title from description/source
-  const base = (desc || src || "").trim();
-  if (base) {
-    let sentence = base.split(/[\n\.!?]/)[0];
-    sentence = sentence.replace(/^(we|let's|lets|please|pls|kindly)\s+/i, "");
-    const words = sentence.split(/\s+/).filter(Boolean);
-    const short = words.slice(0, 6).join(" ");
-    if (short) {
-      return short.replace(/\b\w/g, (c) => c.toUpperCase());
-    }
-  }
-
-  // Absolute last resort
-  return "Upcoming Meeting";
+  return (
+    (u.raw_title || "").trim() ||
+    (u.title || "").trim() ||
+    (u.description || "").trim().slice(0, 30) ||
+    "Upcoming Meeting"
+  );
 }
 
-/* ------------------------------- component ------------------------------- */
+/* ================================
+   MAIN COMPONENT
+================================ */
 export default function DashboardPage({ user }) {
   const navigate = useNavigate();
   const userId = user?.id || user?.user_id || user?.uid || 1;
 
+  const DISMISSED_KEY = `dismissed_events_${userId}`;
+  const notesKey = `${NOTES_KEY_PREFIX}${userId}`;
+
   const [meetings, setMeetings] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [upcoming, setUpcoming] = useState([]);
+  const [dismissed, setDismissed] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [loadingUpcoming, setLoadingUpcoming] = useState(false);
   const [notes, setNotes] = useState("");
+
   const calRef = useRef(null);
 
+  /* ---- Load dismissed events once per user ---- */
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DISMISSED_KEY);
+      setDismissed(stored ? JSON.parse(stored) : []);
+    } catch {
+      setDismissed([]);
+    }
+  }, [DISMISSED_KEY]);
+
+  const dismissEvent = (iso) => {
+    setDismissed((prev) => {
+      if (prev.includes(iso)) return prev;
+      const updated = [...prev, iso];
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  /* ---- Fetch meetings ---- */
   async function fetchMeetings() {
     setLoading(true);
     try {
@@ -335,91 +249,96 @@ export default function DashboardPage({ user }) {
     }
   }
 
-  async function fetchUpcomingFromLatest() {
+  /* ---- Extract upcoming from ALL meetings ---- */
+  async function fetchUpcomingFromAllMeetings() {
     if (!meetings.length) {
       setUpcoming([]);
       return;
     }
-    const latest = meetings[0];
+
     setLoadingUpcoming(true);
+    const all = [];
+
     try {
-      const res = await fetch(
-        `${API}/api/meetings/${latest.id}/summary?t=${Date.now()}`,
-        { credentials: "include" }
-      );
-      if (!res.ok) {
-        setUpcoming([]);
-        return;
-      }
-      const payload = await res.json();
-      const s = payload?.normalized || {};
-      const decisions = Array.isArray(s.decisions) ? s.decisions : [];
-  
-      let items = [];
-      if (
-        Array.isArray(s.schedule_suggestions) &&
-        s.schedule_suggestions.length
-      ) {
-        // LLM-provided schedule suggestions
-        items = s.schedule_suggestions.map((it) => ({
-          raw_title: it.title || "",
-          start_iso: it.start_iso || "",
-          end_iso: it.end_iso || null,
-          description: it.description || it.raw_quote || "",
-          source: it.raw_quote || "",
-        }));
-      } else {
-        // Fallback: regex-based extraction from summary + decisions + action items
-        const bundle = [
-          s.summary_text || "",
-          ...(s.decisions || []),
+      for (const mt of meetings) {
+        if (!mt?.id) continue;
+
+        const res = await fetch(
+          `${API}/api/meetings/${mt.id}/summary?t=${Date.now()}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) continue;
+
+        const payload = await res.json();
+        const s =
+          (payload && typeof payload === "object" && payload.normalized) ||
+          payload ||
+          {};
+
+        const decisions =
+          Array.isArray(s.decisions)
+            ? s.decisions
+            : Array.isArray(payload.decisions)
+            ? payload.decisions
+            : [];
+
+        const textParts = [];
+        [
+          s.summary_text,
+          s.summary,
+          s.summary_markdown,
+          payload.summary_text,
+          payload.summary,
+          payload.summary_markdown,
+          ...decisions,
           ...(s.action_items || []),
+          payload.raw_transcript,
+          payload.full_text,
         ]
-          .filter(Boolean)
-          .join("\n");
-        items = extractUpcomingFromText(bundle);
-      }
-  
-      // 🔥 NEW: map each upcoming item to a *specific* decision (by index)
-      const titled = items.map((u, idx) => {
-        const decisionForThis =
-          decisions[idx] || decisions[0] || null; // try 1:1, else reuse first, else none
-  
-        let fromDecision = null;
-        if (decisionForThis) {
-          // reuse your helper but pass only this one decision
-          fromDecision = titleFromDecisions([decisionForThis]);
-        }
-  
-        return {
+          .filter((t) => typeof t === "string" && t.trim())
+          .forEach((t) => textParts.push(t));
+
+        const extracted = extractUpcomingFromText(textParts.join("\n"));
+
+        const titled = extracted.map((u, idx) => ({
           ...u,
-          title: fromDecision || inferUpcomingTitle(u),
-        };
-      });
-  
-      setUpcoming(titled);
-    } catch (e) {
-      console.error("fetchUpcomingFromLatest error", e);
+          title: titleFromDecisions([decisions[idx]]) || inferUpcomingTitle(u),
+        }));
+
+        all.push(...titled);
+      }
+
+      // Dedup + sort
+      const unique = [
+        ...new Map(all.map((item) => [item.start_iso, item])).values(),
+      ].sort((a, b) => new Date(a.start_iso) - new Date(b.start_iso));
+
+      // Filter out dismissed events
+      const filtered = unique.filter(
+        (ev) => !dismissed.includes(ev.start_iso)
+      );
+
+      setUpcoming(filtered);
+    } catch (err) {
+      console.error("fetchUpcomingFromAllMeetings ERROR:", err);
       setUpcoming([]);
     } finally {
       setLoadingUpcoming(false);
     }
   }
-  
 
-  // Load meetings
+  /* ---- Effects ---- */
   useEffect(() => {
     fetchMeetings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // Refresh upcoming when meetings change
   useEffect(() => {
-    fetchUpcomingFromLatest();
+    fetchUpcomingFromAllMeetings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(meetings)]);
+  }, [JSON.stringify(meetings), JSON.stringify(dismissed)]);
 
-  // Handle redirect after Google auth
+  // Handle redirect after Google auth (kept from original)
   useEffect(() => {
     const dest = localStorage.getItem(AFTER_GOOGLE_KEY);
     if (dest) {
@@ -430,32 +349,25 @@ export default function DashboardPage({ user }) {
     }
   }, [navigate]);
 
-  // Load notes from localStorage when userId changes
+  /* ---- Notes persistence ---- */
   useEffect(() => {
-    const key = `${NOTES_KEY_PREFIX}${userId}`;
-    const stored = localStorage.getItem(key);
-    if (stored != null) {
-      setNotes(stored);
-    } else {
-      setNotes("");
-    }
-  }, [userId]);
+    const stored = localStorage.getItem(notesKey);
+    setNotes(stored || "");
+  }, [notesKey]);
 
-  // Persist notes to localStorage
   useEffect(() => {
-    const key = `${NOTES_KEY_PREFIX}${userId}`;
-    if (notes && notes.trim().length > 0) {
-      localStorage.setItem(key, notes);
-    } else {
-      localStorage.removeItem(key);
-    }
-  }, [notes, userId]);
+    if (notes.trim()) localStorage.setItem(notesKey, notes);
+    else localStorage.removeItem(notesKey);
+  }, [notes, notesKey]);
 
   const recent3 = useMemo(
     () => (meetings || []).slice(0, 3),
     [meetings]
   );
 
+  /* ================================
+     RENDER UI
+  ================================ */
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
@@ -520,7 +432,7 @@ export default function DashboardPage({ user }) {
                 Upcoming Events
               </h3>
               <button
-                onClick={fetchUpcomingFromLatest}
+                onClick={fetchUpcomingFromAllMeetings}
                 disabled={loadingUpcoming}
                 className="px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-sm text-gray-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
               >
@@ -533,7 +445,12 @@ export default function DashboardPage({ user }) {
                   <button
                     key={i}
                     onClick={() => {
-                      calRef.current?.prefill(u);
+                      if (calRef.current?.prefill) {
+                        calRef.current.prefill(u);
+                      }
+                      // mark as dismissed permanently
+                      dismissEvent(u.start_iso);
+                      // remove immediately from UI
                       setUpcoming((prev) =>
                         prev.filter((_, idx) => idx !== i)
                       );

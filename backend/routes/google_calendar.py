@@ -28,26 +28,12 @@ google_router   = APIRouter(prefix="/api/google", tags=["google"])
 auth_router     = APIRouter(prefix="/api/auth/google", tags=["google-auth"])
 calendar_router = APIRouter(prefix="/api/calendar", tags=["google-calendar"])
 
-router = APIRouter(prefix="/api/calendar", tags=["google-calendar"])
-
 # ----------------------------
 # Helpers
 # ----------------------------
 def _now_utc():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc)
+  return datetime.now(timezone.utc)
 
-@router.get("/status")
-def calendar_status(request: Request, db: Session = Depends(get_db)):
-    user = _user_from_cookie_or_header(request, db)
-
-    connected = bool(
-        user.google_refresh_token
-        and user.google_access_token_expires_at
-        and user.google_access_token_expires_at > _now_utc()
-    )
-
-    return {"connected": connected}
 def _user_from_cookie_or_header(request: Request, db: Session) -> User:
     """
     Minimal auth shim. Looks for:
@@ -128,6 +114,25 @@ def _ensure_fresh_token(user: User, db: Session) -> str:
     return user.google_access_token
 
 # ----------------------------
+# Calendar connection status
+# ----------------------------
+@calendar_router.get("/status")
+def calendar_status(request: Request, db: Session = Depends(get_db)):
+    user = _user_from_cookie_or_header(request, db)
+
+    connected = bool(
+        user.google_refresh_token
+        and user.google_token_expiry
+        and isinstance(user.google_token_expiry, datetime)
+        and (
+            user.google_token_expiry.replace(tzinfo=timezone.utc)
+            > _now_utc()
+        )
+    )
+
+    return {"connected": connected}
+
+# ----------------------------
 # OAuth start (aliases)
 # ----------------------------
 @google_router.get("/auth-url")
@@ -144,9 +149,8 @@ def google_auth_url(request: Request, db: Session = Depends(get_db)):
 
 # ----------------------------
 # OAuth callback
-# Two paths supported:
-#   /api/auth/google/callback   (matches your current .env default)
-#   /api/google/callback        (optional alias)
+#   /api/auth/google/callback
+#   /api/google/callback (alias)
 # ----------------------------
 @auth_router.get("/callback")
 @google_router.get("/callback")
@@ -198,6 +202,7 @@ def google_callback(
 # Calendar API used by frontend
 #   GET  /api/calendar/events
 #   POST /api/calendar/create
+#   DELETE /api/calendar/events/{event_id}
 # ----------------------------
 @calendar_router.get("/events")
 def list_events(request: Request, db: Session = Depends(get_db)):
@@ -280,3 +285,27 @@ async def create_event(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=r.status_code, detail=r.text)
 
     return JSONResponse(r.json(), status_code=201)
+
+@calendar_router.delete("/events/{event_id}", status_code=204)
+def delete_google_event(
+    event_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete an event from the user's Google Calendar.
+    """
+    user = _user_from_cookie_or_header(request, db)
+    token = _ensure_fresh_token(user, db)
+
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"
+
+    with httpx.Client(timeout=20) as client:
+        r = client.delete(url, headers=headers)
+
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+
+    # 204 No Content
+    return
